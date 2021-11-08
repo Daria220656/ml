@@ -1,0 +1,560 @@
+---
+title: "Classification"
+author: "Daria Ivanushenko"
+date: "6/9/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## **Data Exploration**
+
+Data set used for this project was taken from the [dataset repository](http://archive.ics.uci.edu/ml/datasets/Census+Income).
+It describes income depending on different demographical characteristics. Main goal of the analysis is to predict income taking into account their age, country of origin, eduaction and etc. 
+
+**Columns:**
+
+* **age**: the age of an individual
+Integer greater than 0
+* **workclass**: a general term to represent the employment status of an individual
+Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked.
+* **fnlwgt**: this is the number of people the census believes the entry represents.
+Integer greater than 0
+* **education**: the highest level of education achieved by an individual.
+Bachelors, Some-college, 11th, HS-grad, Prof-school, Assoc-acdm, Assoc-voc, 9th, 7th-8th, 12th, Masters, 1st-4th, 10th, Doctorate, 5th-6th, Preschool.
+* **education-num**: the highest level of education achieved in numerical form.
+Integer greater than 0
+* **marital-status**: marital status of an individual. Married-civ-spouse corresponds to a civilian spouse while Married-AF-spouse is a spouse in the Armed Forces.
+Married-civ-spouse, Divorced, Never-married, Separated, Widowed, Married-spouse-absent, Married-AF-spouse.
+* **occupation**: the general type of occupation of an individual
+Tech-support, Craft-repair, Other-service, Sales, Exec-managerial, Prof-specialty, Handlers-cleaners, Machine-op-inspct, Adm-clerical, Farming-fishing, Transport-moving, Priv-house-serv, Protective-serv, Armed-Forces.
+* **relationship**: represents what this individual is relative to others. For example an individual could be a Husband. Each entry only has one relationship attribute and is somewhat redundant with marital status. We might not make use of this attribute at all
+Wife, Own-child, Husband, Not-in-family, Other-relative, Unmarried.
+* **race**: Descriptions of an individual’s race
+White, Asian-Pac-Islander, Amer-Indian-Eskimo, Other, Black.
+* **sex**: the biological sex of the individual
+Male, female
+* **capital-gain**: capital gains for an individual
+Integer greater than or equal to 0
+* **capital-loss**: capital loss for an individual
+Integer greater than or equal to 0
+* **hours-per-week**: the hours an individual has reported to work per week
+continuous
+* **native-country**: country of origin for an individual
+United-States, Cambodia, England, Puerto-Rico, Canada, Germany, Outlying-US(Guam-USVI-etc), India, Japan, Greece, South, China, Cuba, Iran, Honduras, Philippines, Italy, Poland, Jamaica, Vietnam, Mexico, Portugal, Ireland, France, Dominican-Republic, Laos, Ecuador, Taiwan, Haiti, Columbia, Hungary, Guatemala, Nicaragua, Scotland, Thailand, Yugoslavia, El-Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands.
+* **income_bracket**: whether or not an individual makes more than $50,000 annually.
+<= 50K, >50K
+
+```{r, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+#setwd("C:\\Users\\daria\\OneDrive\\Desktop\\datasets\\data for R project")
+
+# loading data sets for Argentina, Peru and Uruguay
+data1 = read.csv("income.csv", header = TRUE, dec = ".")
+```
+
+Dataset has 48842 observations and 15 variables.  
+
+```{r, message=FALSE, warning=FALSE}
+library(skimr)
+
+dim(data1)
+
+colnames(data1)
+
+summary(data1)
+
+
+skim(data1) # we decided also to present followign fucntion as it gives great summery for dataset describing types of variables, missing values and some basic statistics 
+
+# Missing data
+colSums(is.na(data1))
+```
+
+```{r, message=FALSE}
+library(stringr)
+library(ggplot2)
+# counts for different income groups
+data1 %>% count(income_bracket)
+
+# minimum and maximum age
+min(data1$age)
+max(data1$age)
+
+```
+
+```{r, message=FALSE}
+# plots
+data1 %>% 
+  mutate(income_bracket = str_replace(income_bracket, '\\.', '')) %>%
+           ggplot(aes(x = age, fill = income_bracket)) + geom_histogram() + theme_bw()
+```
+
+Distribution of the age variable. Distribution is right-skewed. The most frequent age is approximately between 30-40 years old. Minimum value for age is 17 and maximum value for age is 90.  Group having income more than 50K is smaller comparing to group with income less than 50K. Group with 50K or more increases with age while group with less than 50K is dropping.   
+
+```{r, message=FALSE}
+data1 %>% 
+  mutate(income_bracket = str_replace(income_bracket, '\\.', '')) %>%
+  ggplot(aes(x = marital_status, fill = income_bracket)) + geom_bar(position = "fill") + theme_bw() + coord_flip()
+```
+
+The biggest group with income equal to or more than 50K is for those that have civil marriage or have spouse in the Armed-Force. The smallest group that has income less 50K is those that are never married, separated or widowed.  
+
+```{r, message=FALSE}
+data1 %>% 
+  mutate(income_bracket = str_replace(income_bracket, '\\.', '')) %>%
+  ggplot(aes(x = gender, fill = income_bracket)) + geom_bar(position="dodge") + theme_bw()
+```
+
+In our data male groups is more represented than female. We have more male respondents with income higher than 50K comparing to female group.   
+
+```{r, message=FALSE}
+data1 %>% 
+  mutate(income_bracket = str_replace(income_bracket, '\\.', '')) %>%
+  ggplot(aes(x = race, fill = income_bracket)) + geom_bar(position="dodge") + theme_bw()+
+  coord_flip()
+```
+The most representative race in our data is white where majority has income 50K or less. Other races underrepresented in our data hence they will be combined into one category.  
+
+```{r, message=FALSE}
+data1 %>% 
+  mutate(income_bracket = str_replace(income_bracket, '\\.', '')) %>%
+  ggplot(aes(x = income_bracket, y = hours_per_week, fill = income_bracket)) + geom_boxplot()
+```
+On the graphed it is illustrated that group which has income 50K or more works more hours during the week comparing to group which has less than 50K.  
+
+```{r, message=FALSE}
+ggplot(data = data1) +
+  aes(x=education_num, fill=education) +
+  geom_bar() + 
+  theme_bw()
+```
+From the histogram for years of schooling variable we can notice that the most frequent value is 9 years which corresponds to high school graduation. We do not see any skewness on the graph, so we can conclude that distribution of years of schooling is rather symmetrical. The maximum value is 16 years and minimum value is 1 year of schooling.   
+
+
+```{r, message=FALSE}
+#counts for differnt workclass groups. We noticed "?" value in workclass variable.
+data1 %>% count(workclass)
+```
+
+fnlwgt will be excluded in the following step of data preprocessing beacause it's just a weight calculated based on demographical
+factors already included in the dataset such as gender, nationality etc.   
+
+```{r, message=FALSE}
+# Education (type and number of years)
+count(data1, education)
+
+max(data1$education_num)
+min(data1$education_num)
+
+
+# counts for Martial status
+count(data1, marital_status)
+
+count(data1, native_country)
+```
+
+
+
+## **Data Preparation**
+
+```{r, message=FALSE}
+library(dplyr)
+library(stringr)
+library(tidyr)
+
+# Remove "." & Recode 1/0 and rename to "income"
+data1 <- data1 %>% 
+    mutate(income_bracket = str_replace(income_bracket, '\\.', ''),
+           income_bracket = ifelse(income_bracket == '<=50K', '0', '1'),
+           income_bracket = factor(income_bracket, levels = c('0', '1'))) %>% # First is considered a TRUE case
+    rename(income = income_bracket)
+
+
+# counts for income variable
+count(data1, income)
+
+# excluding final weight (fnlwgt) from dataset
+
+data1 = select(data1, -fnlwgt)
+
+
+# checking for missing values
+colSums(is.na(data1))
+
+# replacing "?" with "missing" 
+
+data1$occupation[data1$occupation == "?"] = "missing_information"
+data1$occupation[data1$native_country == "?"] = "missing_information"
+data1$occupation[data1$workclass == "?"] = "missing_information"
+
+```
+
+## **Merging Underrepresented levels**
+
+```{r, message=FALSE}
+
+count(data1, marital_status)
+
+data1 <- data1 %>% 
+  mutate(
+    marital_status = ifelse(marital_status %in% c('Married-spouse-absent', 
+                                                  'Married-AF-spouse', 
+                                                  'Married-civ-spouse'),
+                            'Married', marital_status)
+  )
+
+count(data1, occupation)
+
+data1 <- data1 %>% 
+  mutate(
+    occupation = ifelse(occupation == 'Armed-Forces', 'Protective-serv', 
+                        occupation)
+  )
+
+
+count(data1, native_country) %>% arrange(-n)
+
+data1 <- data1 %>% 
+    mutate(
+        native_country = ifelse(native_country %in% c('United-States', 'Mexico'), 
+                                native_country, 'other')
+    )
+
+
+count(data1, education)
+
+data1 <- data1 %>%
+  mutate(
+    education = ifelse(education %in% c('11th', '7th-8th', "5th-6th", '12th', "10th", "1st-4th", "9th", 'Preschool', "HS-grad"), 'School',  ifelse( education %in% c("Some-college", "Prof-school"), "College", ifelse( education %in% c("Assoc-voc", 'Assoc-acdm'), "Associate", education))))
+
+
+
+count(data1, workclass)
+
+data1 = data1 %>% 
+  mutate(
+    workclass = ifelse(workclass %in% c("Federal-gov", "Local-gov", "State-gov"), "governmental_position", ifelse(workclass %in% c("Self-emp-inc", "Self-emp-not-inc"), "Self-emp", ifelse(workclass %in% c('Without-pay', 'Never-worked'), "No-Pay", workclass)
+  )))
+
+# Changing the values for the workclass
+data1$workclass[data1$workclass == "governmental position"] = "governmental_position"
+data1$workclass[data1$workclass == "No-Pay"] = "No_Pay"
+data1$workclass[data1$workclass == "Self-emp"] = "Self_emp"
+
+
+count(data1, race)
+data1 = data1 %>% 
+  mutate(
+    race = ifelse(race %in% c("Amer-Indian-Eskimo", "Asian-Pac-Islander"), "Other", race)
+  )
+
+# replace all "-" in character variable values with "_"
+
+count(data1, occupation)
+
+data1$occupation <- gsub("-", "_", data1$occupation)
+
+count(data1, marital_status)
+data1$marital_status <- gsub("-", "_", data1$marital_status)
+
+count(data1, native_country)
+data1$native_country <- gsub("-", "_", data1$native_country)
+
+count(data1, relationship)
+data1$relationship <- gsub("-", "_", data1$relationship)
+
+
+```
+
+## **Types of variables**
+
+```{r, message=FALSE}
+categorical_vars <- 
+  sapply(data1, is.character) %>% 
+  which() %>% 
+  names()
+
+categorical_vars
+
+for (variable in categorical_vars) {
+  data1[[variable]] <- as.factor(data1[[variable]])
+}
+
+
+data1 = data1 %>% 
+  mutate(
+    education = factor(education, levels = c('School', 'College', 'Bachelors', 'Masters', 'Doctorate', 'Associate')))
+
+
+```
+
+
+## **Feature Selection**
+
+Splitting data into train and test with the help of createDataPartition() function from caret package.     
+
+```{r, message=FALSE, warning=FALSE}
+library(caret)
+
+options(contrasts = c("contr.treatment",  
+                      "contr.treatment"))
+
+set.seed(123)
+splitting <- createDataPartition(data1$income,
+                                          p = 0.7, 
+                                          list = FALSE) 
+
+train_data = data1[splitting,]
+test_data = data1[-splitting,]
+
+# distribution of the target variable in both samples
+
+a = table(train_data$income)
+b = table(test_data$income)
+
+prop.table(a)
+prop.table(b)
+
+```
+76% of our train and test data consist of values for income < 50K. Later methods will be used to eliminate imbalance issue.  
+
+```{r, message=FALSE}
+library(corrr)
+# selecting numeric variables
+numeric_vars = 
+  sapply(data1, is.numeric) %>% 
+  which() %>% 
+  names()
+
+numeric_vars
+
+# correlation between numeric variables
+correlations = 
+  correlate(train_data[,numeric_vars])
+
+correlations
+
+
+```
+
+Correlation between numerical variable sin our dataset is small hence we will not have multicollinearity and all the numeric variables can will be used in model.  
+ 
+```{r, message=FALSE}
+anova = function(categorical_var) {
+  anova = aov(as.numeric(train_data$income) ~ train_data[[categorical_var]]) 
+  return(summary(anova)[[1]][1, 5])
+}
+
+anova_all_categorical = 
+  sapply(categorical_vars, anova) %>% 
+  print()
+
+
+```
+
+Very low p-values for all the tests show that we can reject null hypothesis saying that variables do not have any impact on dependent variable hence mentioned variables will be included to our model.  
+
+## **Near Zero Variance**
+
+```{r, message=FALSE}
+near_zero = nearZeroVar(train_data,
+                        saveMetrics = TRUE)
+
+near_zero %>% arrange(-zeroVar, -nzv)
+
+```
+
+Capita_gain and Capital loss are possibly have near zero variance. Next step will be to check their distribution.  
+
+```{r, message=FALSE}
+library(kableExtra)
+table(train_data$capital_gain)
+table(train_data$capital_loss)
+
+max(train_data$capital_gain)
+
+kbl(data1[train_data$capital_gain == max(train_data$capital_gain),]) %>% 
+  kable_paper() %>% 
+  scroll_box(width = "100%", height = "200px")
+  
+```
+The most frequent value for variables capita_loss and capital_gain is 0 but still we have many other options, therefore variables will be included to our model. It was noticed that the maximum value for capital_gain is equal to `r max(data1$capital_gain)`. From the first sight it seems to be a mistake but due to the fact that it is hard to predict the value of this variable based on others, it will remain unchangeable.  
+
+## **Linear Combinations**
+
+```{r, message=FALSE}
+(findLinearCombos(train_data[, numeric_vars] ) ->
+    linearCombos )
+```
+None of our variables are linear combinations of others variables.  
+
+## **Logistic Regression**
+
+
+```{r, message=FALSE, warning=FALSE}
+library(caret)
+library(yardstick)
+
+# over-sampling data to eliminate imbalance.
+ctrl_cv10 = trainControl(sampling = "up", method = 'cv', number = 5)
+
+set.seed(123)
+
+logit_upsample = 
+  train(income ~., 
+        data = train_data,
+        method = "glm",
+        family = "binomial",
+        trControl = ctrl_cv10)
+
+
+logit_fitted_upsample = predict(logit_upsample, train_data)
+
+logit_upsample_table1 = table(train_data$income, logit_fitted_upsample)
+
+confusionMatrix(logit_upsample_table1)
+
+
+logit_predict_upsample = predict(logit_upsample, test_data)
+
+logit_upsample_table2 = table(test_data$income, logit_predict_upsample)
+
+confusionMatrix(logit_upsample_table2)
+
+
+```
+
+Accuracy is high enough hence generally logistic regression probably good be a good method for classifying by income. Sensitivity is high meaning that our model is goo din predicting positive values while Spesificity is only 0.57, so our model is not good to predict negative values.  
+
+
+```{r, message=FALSE, warning=FALSE}
+ctrl_cv1 <- trainControl(sampling = "down", method = 'cv', number = 5)
+
+set.seed(123)
+
+logit_downsample = 
+  train(income ~., 
+        data = train_data,
+        method = "glm",
+        family = "binomial",
+        trControl = ctrl_cv1)
+
+
+
+logit_fitted_downsample <- predict(logit_downsample, train_data)
+
+logit_downsample_table1 = table(train_data$income, logit_fitted_downsample)
+
+confusionMatrix(logit_downsample_table1)
+
+logit_predict_downsample <- predict(logit_downsample, test_data)
+
+logit_downsample_table2 = table(test_data$income, logit_predict_downsample)
+
+confusionMatrix(logit_downsample_table2)
+
+
+```
+
+Slightly negative changes were noticed for Accuracy and Specificity with downsampling. Therefore, we can conclude that model with upsampling is quite good for our data.  
+
+## **Decision Tree**
+
+```{r, message=FALSE, warning=FALSE}
+library(parsnip)
+library(yardstick)
+
+
+ctrl_cv10 <- trainControl(sampling = "up", method = "cv", number = 5)
+
+set.seed(123)
+parameters_cp <- data.frame(cp = c(0.1, 0.01, 0.001, 0.0001))
+
+decisiontree_model =
+  train(income ~., 
+        data = train_data,
+        method = "rpart",
+        tuneGrid = parameters_cp,
+        trControl = ctrl_cv10)
+
+
+decisiontree_fitted <- predict(decisiontree_model, train_data)
+
+decisiontree_fitted_table1 = table(train_data$income, decisiontree_fitted)
+
+confusionMatrix(decisiontree_fitted_table1)
+
+
+decisiontree_prediction <- predict(decisiontree_model, test_data)
+
+decisiontree_fitted_table2 = table(test_data$income, decisiontree_prediction)
+
+confusionMatrix(decisiontree_fitted_table2)
+
+
+```
+
+Result on train are slightly better comparing to test data.
+
+On test data Accuracy is 81% which is slightly better comparing to logistic regression. Sensitivity is high meaning that our model is good in predicting positive values. Hovewer, Specificity is only 58% comparing to logistic, hence our model is not very efficient for predicting negative values.
+
+
+## **Random Forest**
+
+```{r, message=FALSE, warning=FALSE}
+# Algorithm Tune
+library(randomForest)
+library(e1071)
+set.seed(123)
+x = train_data[-14]
+# tuning mtry parameter.
+bestmtry <- tuneRF(x, train_data$income, stepFactor=1.5, improve=1e-5, ntreeTry=500)
+print(bestmtry)
+
+# mtry - 3 gives us the smallest prediction error for random forest.
+
+#tuning ntree and nodesize 
+Best = best.randomForest(x, train_data$income, mtry = 3, ntree = c(5, 50, 100, 200, 300, 450, 500), nodesize = c(1, 2, 3),
+                         tunecontrol = tune.control(sampling = "cross", cross = 5))
+print(Best)
+
+# optimal hyperparaneters are pasted to the function                  
+model_random_forest <- randomForest(income ~ ., data=train_data, nodesize = 3, mtry = 3, ntree = 500)                  
+
+
+
+randome_fitted = predict(model_random_forest, train_data)
+
+train_data["fitted_forest"] = randome_fitted
+ 
+randome_fitted_table1 = table(train_data$income, train_data$fitted_forest)
+ 
+confusionMatrix(randome_fitted_table1)
+
+
+random_predict <- predict(model_random_forest, test_data)
+
+test_data["prediction_forest"] = random_predict
+
+random_predict_table2 = table(test_data$income, test_data$prediction_forest)
+
+confusionMatrix(random_predict_table2)
+
+```
+
+As expected on the training data Accuracy, Specificity and Sensitivity are high enough to say that this model is better comparing to logistic regression.  
+
+On test data Accuracy is 86% which is better comparing to logistic regression. Sensitivity is higher meaning that our model is good in predicting positive values. Specificity is much higher comparing to logistic, hence our model with random forest could be used to classify income.  
+
+To sum up, random forest is the best approach among 3 methods which were presented in this article due to good balance between prediciting positive and negative values. 
+
+
+
+

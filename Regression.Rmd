@@ -1,0 +1,681 @@
+---
+title: "Machien Learning - Regression"
+author: "Daria Ivanushenko"
+date: "6/2/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## **Data Preparation**
+
+Data set used for this project was taken from the [dataset repository](https://www.kaggle.com/msorondo/argentina-venta-de-propiedades?select=pe_properties_crude.csv). We decided to take 3 out of 5 Latin American countries due to the high numbers of observations which will affect time processing. Properties in following countries will be analyzed: Argentina, Peru and Uruguay. Data describes properties that were published on different websites in Latin American countries. Data was collected by Properati and available for general use. Our dependent variable is price of the properties and we are analyzing which characteristics of the properties could affect the price.
+
+**Columns:**
+
+* **id** - Notice identifier. It is not unique: if the notification is updated by the real estate agency (new version of the notification) a new record is created with the same id but different dates: registration and cancellation    
+
+* **operation_type** - Type of operation (these are all sales, can be removed)    
+
+* **l2** - Administrative level 2: usually province  
+
+* **l3** - Administrative level 3: usually city  
+
+* **lat** - Latitude  
+
+* **lon** - Longitude  
+
+* **price** - Price published in the ad   
+
+* **property_type** - Type of property (House, Apartment, PH)   
+
+* **rooms** - Number of rooms (useful in Argentina)   
+
+* **bathrooms** - Number of bathrooms   
+
+* **start_date** - Date when the ad was created   
+
+* **end_date** - Date of termination of the advertisement   
+
+* **created_on** - Date when the first version of the notice was created   
+
+* **surface_total** - Total area in m²  
+
+* **surface_covered** - Covered area in m²  
+
+* **title** - Title of the advertisement  
+
+* **description** - Description of the advertisement  
+
+* **ad_type** - Type of ad (Property, Development/Project)   
+
+
+
+Main goal of the analysis is to predict property prices in Argentina  
+
+l1 variable has 4 levels hence data should be filtered to Argentina countries only and to properties that for selling excluding ones to rent due to the incomparable prices.
+
+```{r, message = FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+#setwd("C:\\Users\\daria\\OneDrive\\Desktop\\datasets\\data for R project")
+
+# loading data sets for Argentina, Peru and Uruguay
+ar = read.csv("ar_properties.csv", header = TRUE, dec = ".")
+
+ar = ar %>% filter(l1 == "Argentina" & operation_type == "Venta")
+
+ar = ar %>% select(-operation_type, -l1)
+
+
+
+```
+Dataset has `r dim(ar)[1]` observations and `r dim(ar)[2]` variables.  
+
+```{r}
+library(skimr)
+
+colnames(ar)
+
+summary(ar)
+
+skim(ar) # we decided also to present following function as it gives great summery for dataset describing types of variables, missing values and some basic statistics 
+
+# Missing data
+colSums(is.na(ar))
+
+```
+
+After analyzing output we decided to remove some variables due to the high number of missing values like l4, l5 and l6 or columns like id which uniquely identifies observations. Columns like start_date, end_date created_on and price_period do no possess relevant information to predict prices consequently will be dropped as well. Aim of our analysis is to predict prices of properties in Argentina using regression, so columns title and description will be also removed. Lat and lon variables are mainly useful for plotting maps which is not the main topic of our analysis. Price_period variable will be removed due to the fact that we will consider only properties to sell.
+
+```{r}
+library(dplyr)
+ar = ar %>% select(-lat, -lon, -id, -l4, -l5, -l6, -l3, -end_date, -created_on, - title, -description, -price_period)
+
+```
+
+For price variable it was noticed that the highest value equal to `r max(ar$price, na.rm = TRUE)` and appears only `r sum(ar$price == 9999999999, na.rm = TRUE)` time and the lowest price equal to 0. Most probably it is a mistake, so following variables have been removed form the dataset. Also, Na's of dependent variable will be removed.  
+
+
+```{r}
+
+library(ggplot2)
+library(tidyr)
+
+
+ar = subset(ar, !(price %in% c(9999999999, 111111111, 0, 1,3333333, 123456789, 123123321)))
+
+summary(ar$price)
+
+ar = ar %>% drop_na(price) 
+colSums(is.na(ar))
+
+
+```
+
+
+Following step will be changing data types for correct one. Qualitative variables should be stored as factors. Ad_type variable also will be removed from the analysis, as it has only one level. 
+
+```{r}
+#converting nominal bariables into factors
+ar["ad_type"] = as.factor(ar$ad_type)
+ar["property_type"] = as.factor(ar$property_type)
+ar["operation_type"] = as.factor(ar$operation_type)
+ar["l2"] = as.factor(ar$l2)
+ar["start_date"] = as.character(as.Date(ar$start_date, "%m/%d/%Y"))
+ar['month'] = as.numeric(substr(ar$start_date, 6, 7))
+ar['day'] = as.numeric(substr(ar$start_date, 9, 10))
+
+
+# checking levels
+levels(ar$ad_type)
+levels(ar$property_type)
+levels(ar$operation_type)
+levels(ar$l3)
+levels(ar$l2)
+
+# removing ad_type, start_date variable and filtering data
+ar = ar %>% select(-ad_type, -start_date)
+
+
+```
+
+It is important to have common currency for the prices. So, it was  decided to use USD. After conversion, currency column will be removed.  
+
+```{r}
+levels(as.factor(ar$currency))
+ar["price_USD"] = ifelse(ar$currency == "ARS", ar$price * 0.011, ifelse(
+  ar$currency == "PEN", ar$price * 0.28, ifelse(ar$currency == "UYU", ar$price * 0.023, ar$price)))
+
+ar = ar %>% select(-currency, -price)
+```
+
+
+## **Dependent variable**
+
+Next step will be understanding the distribution of the dependent variable. Boxplot shows that we have many outliers in our data. After reviewing data, some anomalies were noticed. The reason for that could be wrongly provided information in currency column comparing to information from title or description columns. After taking into consideration all the information including median of the price which is equal to `r median(ar$price)`, it was decide to remove observation which most probably do not reflect real prices for properties.
+
+
+```{r}
+
+library(ggplot2)
+library(tidyr)
+library(psych)
+options(scipen=999)
+
+# basic statistics.
+describe(ar$price_USD)
+
+median(ar$price)
+#boxplot of the dependent variable
+
+ggplot(ar, aes(x = price_USD)) + 
+  geom_boxplot()
+
+ggplot(ar, aes(price_USD)) + 
+  geom_histogram()
+
+# filtering data
+ar = ar %>% filter(price_USD <5000000)
+
+ar %>% ggplot(aes(x = price_USD)) + 
+  geom_boxplot()
+
+# distribution of the dependent variable
+ar %>% ggplot(aes(x = price_USD)) + 
+  geom_histogram(bins = 100)
+
+#clearly right-skewed distribution. 
+
+ggplot(ar,
+       aes(x = log(price_USD ))) +
+  geom_histogram(
+                 bins = 100)
+
+ar["price_log"] = log(ar$price_USD)
+
+median(ar$price)
+
+
+```
+
+After log transformation our prices look symmetrically distributed.  
+
+
+## **Feature Selection and Imputing Missing Values**
+
+Splitting data into train and test with the help of createDataPartition() function from caret package.    
+
+```{r, message=FALSE, warning=FALSE}
+
+library(caret)
+
+
+#splitting data set into train and test.
+set.seed(123)
+splitting <- createDataPartition(ar$price_USD,
+                                          p = 0.7, 
+                                          list = FALSE) 
+
+train = ar[splitting,]
+test = ar[-splitting,]
+
+# distribution of the target variable in both samples
+
+summary(train$price_USD)
+summary(test$price_USD)
+```
+
+
+### **Numeric variables**
+
+Correlation between target and numeric variables and relations between each other.  
+
+
+```{r}
+library(corrr)
+
+#correlation with target value
+train %>% select( rooms, bedrooms, bathrooms, surface_covered, surface_total, price_USD, month, day) %>%
+ correlate() %>% focus(price_USD)
+
+
+train %>% select(rooms, bedrooms, bathrooms, surface_total, price_USD) %>%
+  correlate()
+
+# missing values in percentage
+sum(is.na(ar$rooms))/nrow(ar)
+sum(is.na(ar$bedrooms))/nrow(ar)
+sum(is.na(ar$bathrooms))/nrow(ar)
+
+# removing columns
+train = train %>% select(-surface_covered, -day, -bedrooms)
+test = test %>% select(-surface_covered, -day, -bedrooms)
+
+numeric_vars <- 
+  sapply(ar, is.numeric) %>% 
+  which() %>% 
+  names()
+
+
+
+```
+ 
+Surface_total partially consist information from surfaced_covered variable and due to poor correlation of surface_covered variable with dependent variable, it can be removed from data. Following step would be checking correlation between independent variables. Rooms, bedrooms and bathrooms are correlated between each other. Due to the fact that around `r sum(is.na(ar$bedrooms))/nrow(ar) * 100`% of bedrooms column values are missing, it will be removed from the data. Day will be removed from data due to small correlation with target variable.
+
+### **Categorical variables**
+
+Correlation between target and categorical variables and relations between each other.   
+
+```{r}
+ar_categorical_vars = 
+  sapply(ar, is.factor) %>% 
+  which() %>% 
+  names()
+
+property_anova = aov(train$price_USD ~ train$property_type)
+summary(property_anova)[[1]][1, 4:5]
+
+l2_anova = aov(train$price_USD ~ train$l2)
+summary(l2_anova)[[1]][1, 4:5]
+
+
+
+```
+Very low p-values for both tests show that we can reject null hypothesis saying that variables property_type and l2 do not have any impact on dependent variable hence mentioned variables will be included to our model.
+
+## **Near to zero Variance**
+
+```{r}
+
+train_2 = train %>% select( -operation_type)
+
+near_zero = nearZeroVar(train_2,
+                        saveMetrics = TRUE)
+
+near_zero %>% arrange(-zeroVar, -nzv)
+```
+Due to the results none of the variables have zero or near to zero variance.
+
+
+## **Missing values**
+
+We still have missing values for the variable that could have impact on prices of the properties. For bathroom column we have `r sum(is.na(ar$bathrooms))` missing values and for rooms variable we have `r sum(is.na(ar$rooms))` missing values. 
+Before deciding which method to use we'd tried to use prediction mean method from mice package but this method is very time consuming for large datasets. Finally, missing values will be imputed by the average values depending on the property type. 
+
+```{r, warning=FALSE, message=FALSE}
+
+# calculating averages
+average_rooms <- train %>% 
+    filter(!is.na(rooms)) %>% 
+    group_by(property_type) %>% 
+    summarise(average_room = round(mean(rooms, na.rm = T)))
+
+average_bathrooms <- train %>% 
+   filter(!is.na(bathrooms)) %>% 
+     group_by(property_type) %>% 
+     summarise(average_bathroom = round(mean(bathrooms, na.rm = T)))
+
+average_surface = train %>% 
+    filter(!is.na(surface_total)) %>% 
+    group_by(property_type) %>% 
+    summarise(average_surface = round(mean(surface_total, na.rm = T)))
+
+# merging averages with train set and filling missing values
+train = merge(average_rooms, train)
+train = merge(average_bathrooms, train)
+train = merge(average_surface, train)
+
+
+train = train %>% mutate(rooms = ifelse(is.na(rooms), average_room, rooms), 
+                         bathrooms = ifelse(is.na(bathrooms), average_bathroom, bathrooms), 
+                         surface_total = ifelse(is.na(surface_total), average_surface, surface_total)) %>% 
+  select(-average_bathroom, -average_room, -average_surface, -operation_type)
+
+
+# merging averages with test set and filling missing values
+test = merge(average_rooms, test)
+test = merge(average_bathrooms, test)
+test = merge(average_surface, test)
+
+test = test %>% mutate(rooms = ifelse(is.na(rooms), average_room, rooms), 
+                         bathrooms = ifelse(is.na(bathrooms), average_bathroom, bathrooms), 
+                         surface_total = ifelse(is.na(surface_total), average_surface, surface_total)) %>% 
+  select(-average_bathroom, -average_room, -average_surface, -operation_type)
+
+
+
+```
+
+
+
+## **Linear Regression**
+
+```{r}
+ar_ln <- lm(price_log ~  month + property_type + l2 + rooms +bathrooms + surface_total, 
+                 data = train)
+
+summary(ar_ln )
+```
+Our model describes only 40% of the variability. The reason could be that our model is missing some information which has great impact on dependent variable. 
+P-value for F statistics is much lower than 5% significance level hence we are failing to reject null hypothesis stating that our variables are jointly significant. 
+Results from t-test are showing that all variables in our model are statistically significant at 5% significance level. 
+
+```{r}
+#distribution fo the error terms
+
+houses_predicted = predict(ar_ln)
+
+# the distribution of errors
+
+ggplot(data.frame(error = train$price_log - houses_predicted),
+       aes(x = error)) +
+  geom_histogram(fill = "blue",
+                 bins = 100) +
+  theme_bw()
+
+# and plot real values against the predicted
+
+ggplot(data.frame(real = train$price_log,
+                  predicted = houses_predicted),
+       aes(x = predicted, 
+           y = real)) +
+  geom_point(col = "blue") +
+  theme_bw()
+
+
+# check their correlation
+
+cor(train$price_log,
+    houses_predicted)
+
+# We can see that deviation of error terms from zero is quite big, as some of them reaches -/+ 5. Scatter plot shows us that there is no linear relationship between predicted and real values and correlation between them is only 0.63. 
+
+```
+We can see that deviation of error terms from zero is quite big, as some of them reaches -/+ 5. Scatter plot shows us that there is no linear relationship between predicted and real values and correlation between them is only `r cor(train$price_log,houses_predicted) `.
+
+
+## **Polynomial Regression**  
+
+After experimenting with different orders of polynomial function it was decided to show the result fr 3rd order, as later results did not change significantly.
+
+```{r}
+
+
+ar_pol <- lm(price_log ~ month + I(month^2)  + property_type + l2 + rooms + I(rooms^2) + I(bathrooms^2) + I(bathrooms^3) + surface_total + I(surface_total^3) + I(surface_total^2) + surface_total + bathrooms,
+                 data = train)
+
+summary(ar_pol )
+```
+Our model describes only 41% of the variability.
+P-value for F statistics is much lower than 5% significance level hence we are failing to reject null hypothesis stating that our variables are jointly significant. 
+Results from t-test are showing that all variables in our model are statistically significant at 5% significance level. 
+
+
+```{r}
+#distribution for the error terms
+
+houses_predicted = predict(ar_pol)
+
+# and check the distribution of error
+
+ggplot(data.frame(error = train$price_log - houses_predicted),
+       aes(x = error)) +
+  geom_histogram(fill = "blue",
+                 bins = 100) +
+  theme_bw()
+
+# plot real values against the predicted
+
+ggplot(data.frame(real = train$price_log,
+                  predicted = houses_predicted),
+       aes(x = predicted, 
+           y = real)) +
+  geom_point(col = "blue") +
+  theme_bw()
+
+
+# check their correlation
+
+cor(train$price_log,
+    houses_predicted)
+
+```
+
+We can see that deviation of error terms from zero is slightly smaller comparing to linear model but still some of them reaches -/+ 5. Scatter plot shows us that there is no linear relationship between predicted and real values and correlation between them is `r cor(train$price_log,houses_predicted) `. 
+
+
+## **Model validation**
+
+```{r}
+library(caret)
+library(dplyr)
+
+ctrl_cv5 = trainControl(method = "cv",
+                          number = 5)
+
+
+set.seed(123)
+
+lm_train = 
+  train(price_log ~ month + I(month^2)  + property_type + l2 + rooms + I(rooms^2) + I(bathrooms^2) + I(bathrooms^3) + surface_total + I(surface_total^3) + I(surface_total^2) + surface_total + bathrooms, 
+        data = train,
+        method = "lm",
+        trControl = ctrl_cv5)
+
+summary(lm_train)
+
+```
+```{r}
+library(yardstick)
+
+lm_fitted = predict(lm_train,
+                     train)
+
+mae(data = train, price_log, lm_fitted)
+rmse(data = train, price_log, lm_fitted)
+
+
+lm_forecasts = predict(lm_train,
+                        test)
+
+mae(data = test, price_log, lm_forecasts)
+rmse(data = test, price_log, lm_forecasts)
+
+
+```
+
+Values for fitted values are slightly better than for predictions.
+
+Value of RMSE close to 1 indicates that our predicted values are far from observed one. 
+On average the difference between observed and predicted price is 0.55 percentage points.
+
+Based on above metrics we can conclude that polynomial model is not appropriate to predict prices.
+
+## **Centering data**
+
+```{r}
+library(caret)
+library(dplyr)
+
+ctrl_cv5 = trainControl(method = "cv",
+                          number = 5)
+
+
+set.seed(123)
+
+lm_train_centered = 
+  train(price_log ~ month + I(month^2)  + property_type + l2 + rooms + I(rooms^2) + I(bathrooms^2) + I(bathrooms^3) + surface_total +
+          I(surface_total^3) + I(surface_total^2) + surface_total + bathrooms, 
+        data = train,
+        method = "lm",
+        preProcess=c('center'),
+        trControl = ctrl_cv5)
+
+
+```
+
+```{r}
+library(yardstick)
+
+lm_fitted_centered = predict(lm_train_centered,
+                     train)
+
+mae(data = train, price_log, lm_fitted_centered)
+rmse(data = train, price_log, lm_fitted_centered)
+
+lm_forecasts_centered = predict(lm_train_centered,
+                        test)
+
+mae(data = test, price_log, lm_forecasts_centered)
+rmse(data = test, price_log, lm_forecasts_centered)
+```
+
+Centering the data did not change our results. 
+
+
+
+## **Ridge Regression**
+
+```{r}
+ctrl_cv5 = trainControl(method = "cv",
+                         number = 5)
+
+lambdas = 10^seq(2, -3, by = -.1)
+
+parameters_ridge = expand.grid(alpha = 0,
+                                lambda = lambdas)
+
+
+set.seed(123456789)
+houses_ridge = train(price_log ~  month + property_type + l2 + rooms +bathrooms + surface_total,
+                      data = train,
+                      method = "glmnet",
+                      tuneGrid = parameters_ridge,
+                      trControl = ctrl_cv5)
+
+houses_ridge
+
+plot(houses_ridge)
+
+houses_ridge$bestTune$lambda
+
+```
+
+```{r}
+
+
+ridge_fitted = predict(houses_ridge,
+                     train)
+
+mae(data = train, price_log, ridge_fitted)
+rmse(data = train, price_log, ridge_fitted)
+
+
+ridge_forecasts = predict(houses_ridge,
+                        test)
+
+mae(data = test, price_log, ridge_forecasts)
+rmse(data = test, price_log,ridge_forecasts)
+```
+
+
+From the plot we can conclude that the higher regularization parameter (lambda) the higher RMSE value we have. Best lambda which was used for estimating the final model is 0.039.  
+
+## **Lasso Regression**
+
+```{r}
+ctrl_cv5 = trainControl(method = "cv",
+                         number = 5)
+
+parameters_lasso = expand.grid(alpha = 1,
+                                lambda = 10^seq(2, -3, by = -.1))
+
+
+set.seed(123456789)
+
+houses_lasso = train(price_log ~  month + property_type + l2 + rooms +bathrooms + surface_total,
+                      data = train,
+                      method = "glmnet",
+                      tuneGrid = parameters_lasso,
+                      trControl = ctrl_cv5)
+
+houses_lasso
+
+plot(houses_lasso)
+
+houses_lasso$bestTune$lambda
+
+```
+```{r}
+
+lasso_fitted = predict(houses_lasso,
+                     train)
+
+mae(data = train, price_log, lasso_fitted)
+rmse(data = train, price_log, lasso_fitted)
+
+
+lasso_forecasts = predict(houses_ridge,
+                        test)
+
+mae(data = test, price_log, lasso_forecasts)
+rmse(data = test, price_log,lasso_forecasts)
+```
+
+
+For lasso regression RMSE grows drastically for high regularization parameter (lambda). Best lambda which was finally chosen is 0.001.
+
+To sum up, both lasso and ridge regressions did not improve our predictions, as RMSE is quite high for both methods.
+
+## **Decision tree**
+
+```{r, message=FALSE, warning=FALSE}
+library(parsnip)
+library(yardstick)
+
+
+ctrl_cv10 = trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 3)
+
+set.seed(123)
+parameters_cp = data.frame(cp = c(0.1, 0.01, 0.001, 0.0001, 0.2, 1, 0.8, 1.5))
+
+decisiontree_model =
+  train(price_log ~  month + property_type + l2 + rooms +bathrooms + surface_total, 
+        data = train,
+        method = "rpart",
+        tuneGrid = parameters_cp,
+        trControl = ctrl_cv10)
+
+
+
+```
+
+```{r}
+
+
+tree_fitted = predict(decisiontree_model,
+                     train)
+
+mae(data = train, price_log, tree_fitted)
+rmse(data = train, price_log, tree_fitted)
+
+
+tree_forecasts = predict(decisiontree_model,
+                        test)
+
+mae(data = test, price_log, tree_forecasts)
+rmse(data = test, price_log,tree_forecasts)
+
+```
+
+From the obtained results for trained data we can see that mea and rmse looks slightly better comparing to previous methods. As it is expected results for test data are moderately worse comparing to train data set. 
+We attained mea at the level of 48 and rmse at the level of 70 that is somewhat better than simple polynomial regression.
